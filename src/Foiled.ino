@@ -37,15 +37,15 @@ double targetBalance = 5;
 double headingDelta = 0;
 
 //Heading PID
-double consKp=0.7, consKi=.2, consKd=0.01;
+double consKp=1, consKi=.3, consKd=0.02;
 double Setpoint, Input, Output;
 PID headingPID(&Input, &Output, &Setpoint, consKp, consKi, consKd, DIRECT);
 
-#define TURN_SENSITIVITY 60.0 //The lower this number the more sensitive we are to
+#define TURN_SENSITIVITY 30.0 //The lower this number the more sensitive we are to
                               //Turn Inputs
-#define THROTTLESTART 40      //This is the PWM level that actually makes the wheels
+#define THROTTLESTART 17      //This is the PWM level that actually makes the wheels
                               //move
-#define H_HOLD_TIME 500       //Milliseconds to hold in heading mode after 0 throttle
+#define H_HOLD_TIME 100       //Milliseconds to hold in heading mode after 0 throttle
 
 unsigned long hstart = 0;
 
@@ -85,11 +85,10 @@ double rc6 = 0; // Safety
 //Define the PPM decoder object
 PulsePositionInput myIn;
 
+PWMServo spinner;
+
 //Define the ports that control the motors
 //Motor Driver Outputs
-
-
-
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_DCMotor *leftMotor = AFMS.getMotor(3);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
@@ -113,8 +112,11 @@ IntervalTimer gyroSafety;
 void setup()   {
 
   pinMode(RCVR_PPM, INPUT_PULLDOWN);
-
   pinMode(13,OUTPUT); //Just make sure we can use the onboard LED for stuff
+
+
+  spinner.attach(3);
+  spinner.write(0);
 
   Serial.begin(9600);
   myIn.begin(RCVR_PPM);
@@ -182,7 +184,11 @@ void setup()   {
 
 int thrust;
 int turn;
+unsigned long startMillis = 0;
+int lastLoop = 0;
+int spinnerPWM = 0;
 void loop() {
+  startMillis = millis();
   updateChannels();
   euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
   display.clearDisplay();
@@ -190,7 +196,7 @@ void loop() {
   //Scale the raw RC input
    thrust = round(((rc2 - rcMin)/rcScale) * 500) - 250; //Cast to -250-0-250
    turn = round(((rc1 - rcMin)/rcScale) * 500) - 250; //Cast to -250-0-250
-  int flipper = round(((rc3 - rcMin)/rcScale) * 180) - 90; //Cast to 0-256
+   spinnerPWM = round(((rc3 - rcMin)/rcScale) * 180); //Cast to 0-256
   int yaw = round(((rc4 - rcMin)/rcScale) * 180) - 90; //Cast to 0-256
   int mode = round(((rc5 - rcMin)/rcScale) * 4); //Cast to 0-256
   int safety = round(((rc6 - rcMin)/rcScale) * 256); //Cast to 0-256
@@ -201,11 +207,11 @@ void loop() {
     modeString = "Direct";
   }
   else if (mode == 2){
-    modeString = "Heading";
+    modeString = "Balance";
   }
 
   else if (mode == 4){
-    modeString = "Full";
+    modeString = "Heading";
   }
 
   if (safety < 200){
@@ -217,8 +223,13 @@ void loop() {
     //Stop all the motors.
     leftMotor->run(RELEASE);
     rightMotor->run(RELEASE);
+    spinner.write(0);
   }
 
+
+  if (!safeMode){
+    spinner.write(spinnerPWM);
+  }
 
   //Apply Deadband Correction
   if (thrust < DEADBAND && thrust > (DEADBAND * -1)){
@@ -243,20 +254,20 @@ void loop() {
   }
 
   else if (mode == 2){
-    driveAsist(thrust, turn);
+    doBalance();
   }
 
   else if (mode == 4){
-    fullAuto(thrust, turn);`  `
+    fullAuto(thrust, turn);
   }
 
-
+  lastLoop = millis() - startMillis ;
 
 }
 void doBalance(){
     euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-    if (euler.z() < -50 && euler.z() > -140){
-      balSet = -87.5 + trvOut;
+    if (euler.z() < -40 && euler.z() > -140){
+      balSet = -68.5 + trvOut;
       balIn = euler.z();
       balancePID.Compute();
       thrust = balOut;
@@ -294,6 +305,10 @@ void updateDisplay(){
   display.setRotation(0);
   display.setTextSize(1);
   display.print(armString);
+  display.print(' ');
+  display.print(lastLoop);
+  display.print(' ');
+  display.print(spinnerPWM);
   display.setCursor(64,0);
   display.setTextSize(1);
   display.print(modeString);
@@ -318,7 +333,7 @@ void updateDisplay(){
   display.println(euler.z());
   display.setCursor(64,24);
   display.print("T: ");
-  display.print(balSet);
+  display.print(headingDelta);
   display.print(" ");
   display.print(targetHeading);
   display.display();
@@ -328,12 +343,12 @@ void updateDisplay(){
 void fullAuto(double thrust, double turn){
 
   //Lets run away from areas where we might fall over!
-  double tilt = euler.y();
+  double tilt = euler.z();
   double thrustAdjust;
-  if  (tilt > 20){
+  if (tilt < -20){
     thrustAdjust = -100 + tilt * 2;
   }
-  else if (tilt < -20)){
+  else if (tilt < -20){
     thrustAdjust = 100 + tilt * 2;
   }
   thrust = thrust + thrustAdjust;
@@ -351,7 +366,7 @@ void driveAsist(double thrust, double turn){
   double currentHeading = euler.x();
   int throttleAssist = THROTTLESTART;
 
-  if (thrust < 20 && hstart + H_HOLD_TIME < millis()){
+  if (thrust < 20 && thrust > -20 && hstart + H_HOLD_TIME < millis()){
     targetHeading = currentHeading;
     if (turn < 0 ){
       turn = ((turn * turn) / 250) * -1;
@@ -362,8 +377,11 @@ void driveAsist(double thrust, double turn){
     simpleDrive(thrust, turn);
   }
   else {
-    hstart = millis();
 
+
+    if (thrust > 20 || thrust < -20){
+      hstart = millis();
+    }
     //Turn input now shifts our target heading
     targetHeading = targetHeading + (turn/TURN_SENSITIVITY) * -1;
     if (targetHeading < 0){
@@ -383,6 +401,10 @@ void driveAsist(double thrust, double turn){
     }
     else {
       headingDelta = targetHeading - currentHeading;
+    }
+
+    if (headingDelta < 2 && headingDelta > -2){
+      headingDelta = 0;
     }
 
     Setpoint = 0;

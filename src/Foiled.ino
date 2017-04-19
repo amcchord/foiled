@@ -72,7 +72,7 @@ int rcScale = rcMax - rcMin;
 #define FAILSAFE false //Failsafe is disabled for now
 #define DEADBAND 20 //If thrust values are within +/-10 of 0 assume they are 0
 #define REJECTTHRESH 2200 //Rc values above this number are considered invalid
-#define RCVR_PPM 23 //Pin where the PPM comes in
+#define RCVR_PPM 5 //Pin where the PPM comes in
 
 //Create some global variables to store the state of RC Reciver Channels
 double rc1 = 0; // Turn
@@ -84,10 +84,7 @@ double rc6 = 0; // Safety
 
 //Define the PPM decoder object
 PulsePositionInput myIn;
-PWMServo leftFlipper;
-PWMServo rightFlipper;
-int leftLevel = 90;
-int rightLevel = 90;
+
 //Define the ports that control the motors
 //Motor Driver Outputs
 
@@ -114,29 +111,6 @@ imu::Vector<3> euler ;
 IntervalTimer gyroSafety;
 
 void setup()   {
-  pinMode(9, INPUT_PULLDOWN);
-  pinMode(10, INPUT_PULLDOWN);
-  pinMode(14, INPUT_PULLDOWN);
-  pinMode(15, INPUT_PULLDOWN);
-
-  leftFlipper.attach(3);
-  rightFlipper.attach(4);
-  leftFlipper.write(80);
-  rightFlipper.write(108);
-
-  leftEye.begin();
-  leftEye.setRotation(3);
-  leftEye.setTextWrap(false);
-  leftEye.setBrightness(10);
-  leftEye.fillScreen(0);
-  leftEye.show();
-
-  rightEye.begin();
-  rightEye.setRotation(3);
-  rightEye.setTextWrap(false);
-  rightEye.setBrightness(10);
-  rightEye.fillScreen(0);
-  rightEye.show();
 
   pinMode(RCVR_PPM, INPUT_PULLDOWN);
 
@@ -220,7 +194,7 @@ void loop() {
   int yaw = round(((rc4 - rcMin)/rcScale) * 180) - 90; //Cast to 0-256
   int mode = round(((rc5 - rcMin)/rcScale) * 4); //Cast to 0-256
   int safety = round(((rc6 - rcMin)/rcScale) * 256); //Cast to 0-256
-  eyeControl(mode);
+
 
 
   if (mode == 0){
@@ -241,7 +215,6 @@ void loop() {
     //Stop all the motors.
     leftMotor->run(RELEASE);
     rightMotor->run(RELEASE);
-
   }
 
 
@@ -263,10 +236,6 @@ void loop() {
   count++;
 
 
-
-  //doBalance();
-
-
   if (mode == 0){
     simpleDrive(thrust, turn);
   }
@@ -280,7 +249,6 @@ void loop() {
     //fullAuto(thrust, turn);
     simpleDrive(thrust, turn);
   }
-  setFlippers(flipper, yaw);
 
 
 
@@ -311,96 +279,14 @@ void doBalance(){
       simpleDrive(thrust, turn);
 
     } else {
-      leftMotorRear->run(RELEASE);
       leftMotor->run(RELEASE);
       rightMotor->run(RELEASE);
-      rightMotorRear->run(RELEASE);
+
     }
 
 }
 
 
-
-void levelFlippers(){
-    euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-    int x = 90;
-    bool escapeThis = false;
-    double eulerBase = euler.z();
-    while (x < 140 && escapeThis == false ){
-      euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-
-      leftFlipper.write(x);
-      delay(100);
-      display.clearDisplay();
-      display.setCursor(0,0);
-      display.setTextSize(1);
-      display.println(x);
-      display.println(eulerBase);
-      display.println(euler.z());
-      display.display();
-      if (eulerBase - euler.z() > 1 || eulerBase - euler.z() < -1 ){
-        display.clearDisplay();
-        display.setCursor(0,0);
-        display.setTextSize(1);
-        display.println("HIT!");
-        display.println(eulerBase);
-        display.println(euler.z());
-        display.println(eulerBase - euler.z());
-        display.display();
-        escapeThis = true;
-        leftFlipper.write(80);
-        delay(500);
-        leftFlipper.write(x-4);
-        leftLevel = x - 4;
-      }
-      x++;
-    }
-    x = 110;
-    euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-    eulerBase = euler.z();
-    escapeThis = false;
-    while (x > 60 && escapeThis == false ){
-      euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-
-      rightFlipper.write(x);
-      delay(100);
-      display.clearDisplay();
-      display.setCursor(0,0);
-      display.setTextSize(1);
-      display.println(x);
-      display.println(eulerBase);
-      display.println(euler.z());
-      display.display();
-      if (eulerBase - euler.z() > 1 || eulerBase - euler.z() < -1 ){
-        display.clearDisplay();
-        display.setCursor(0,0);
-        display.setTextSize(1);
-        display.println("HIT!");
-        display.println(eulerBase);
-        display.println(euler.z());
-        display.println(eulerBase - euler.z());
-        display.display();
-        escapeThis = true;
-        rightFlipper.write(120);
-        delay(500);
-        rightFlipper.write(x+4);
-        rightLevel = x +4;
-      }
-      x--;
-    }
-}
-
-void setFlippers(int flip, int shift){
-
-  int leftFlip = leftLevel;
-  int rightFlip = rightLevel;
-
-  leftFlip = leftFlip + shift + flip;
-  rightFlip = rightFlip + shift - flip;
-
-  leftFlipper.write(leftFlip);
-  rightFlipper.write(rightFlip);
-}
 
 void updateDisplay(){
   display.clearDisplay();
@@ -434,7 +320,7 @@ void updateDisplay(){
   display.print("T: ");
   display.print(balSet);
   display.print(" ");
-  display.print(rightLevel);
+  display.print(targetHeading);
   display.display();
 
 }
@@ -548,15 +434,13 @@ void simpleDrive(double thrust, double turn){
       leftMotor->setSpeed(left);
       leftMotor->run(FORWARD);
 
-      leftMotorRear->setSpeed(left);
-      leftMotorRear->run(BACKWARD);
+
 
     } else { //Left motor needs to spin backward
       leftMotor->setSpeed(left * -1);
       leftMotor->run(BACKWARD);
 
-      leftMotorRear->setSpeed(left * -1);
-      leftMotorRear->run(FORWARD);
+
     }
 
 
@@ -570,17 +454,14 @@ void simpleDrive(double thrust, double turn){
 
     if (right > 0){
       rightMotor->setSpeed(right);
-      rightMotor->run(FORWARD);
+      rightMotor->run(BACKWARD);
 
-      rightMotorRear->setSpeed(right);
-      rightMotorRear->run(BACKWARD);
+
 
     } else {
       rightMotor->setSpeed(right * -1);
-      rightMotor->run(BACKWARD);
+      rightMotor->run(FORWARD);
 
-      rightMotorRear->setSpeed(right * -1);
-      rightMotorRear->run(FORWARD);
     }
 }
 
@@ -626,74 +507,6 @@ void updateChannels(){
       rc6 = 0;
     }
   }
-}
-
-void eyeControl (int mode){
-  if (mode == 0){ //Normal Eyes
-    leftEye.setTextWrap(false);
-    leftEye.setBrightness(20);
-    leftEye.setTextColor(leftEye.Color(255, 0, 0));
-
-    leftEye.fillScreen(0);
-    leftEye.setCursor(0, 0);
-    leftEye.fillRoundRect(0, 0, 8, 8, 4, leftEye.Color(64, 64, 64));
-    leftEye.fillRoundRect(3, 2, 2, 2, 0, leftEye.Color(0, 0, 0));
-    leftEye.show();
-
-    rightEye.setTextWrap(false);
-    rightEye.setBrightness(20);
-    rightEye.setTextColor(leftEye.Color(255, 0, 0));
-
-    rightEye.fillScreen(0);
-    rightEye.fillRoundRect(0, 0, 8, 8, 4, leftEye.Color(64, 64, 64));
-    rightEye.fillRoundRect(3, 2, 2, 2, 0, leftEye.Color(0, 0, 0));
-    rightEye.show();
-  }
-  else if (mode == 2){ //Angry eyes
-    leftEye.setTextWrap(false);
-    leftEye.setBrightness(20);
-    leftEye.setTextColor(leftEye.Color(255, 0, 0));
-
-    leftEye.fillScreen(0);
-    leftEye.setCursor(0, 0);
-    leftEye.fillRoundRect(0, 0, 8, 8, 4, leftEye.Color(64, 64, 128));
-    leftEye.fillRoundRect(3, 2, 2, 2, 0, leftEye.Color(0, 0, 0));
-    leftEye.fillTriangle(0,7,7,7,7,4,leftEye.Color(0, 0, 0));
-    leftEye.show();
-
-    rightEye.setTextWrap(false);
-    rightEye.setBrightness(20);
-    rightEye.setTextColor(leftEye.Color(255, 0, 0));
-
-    rightEye.fillScreen(0);
-    rightEye.fillRoundRect(0, 0, 8, 8, 4, leftEye.Color(64, 64, 128));
-    rightEye.fillRoundRect(3, 2, 2, 2, 0, leftEye.Color(0, 0, 0));
-    rightEye.fillTriangle(0,7,7,7,0,4,leftEye.Color(0, 0, 0));
-    rightEye.show();
-  }
-  else  if (mode == 4){ //Angry red eyes
-    leftEye.setTextWrap(false);
-    leftEye.setBrightness(20);
-    leftEye.setTextColor(leftEye.Color(255, 0, 0));
-
-    leftEye.fillScreen(0);
-    leftEye.setCursor(0, 0);
-    leftEye.fillRoundRect(0, 0, 8, 8, 4, leftEye.Color(32, 128, 0));
-    leftEye.fillRoundRect(3, 2, 2, 2, 0, leftEye.Color(0, 0, 0));
-    leftEye.fillTriangle(0,7,7,7,7,4,leftEye.Color(0, 0, 0));
-    leftEye.show();
-
-    rightEye.setTextWrap(false);
-    rightEye.setBrightness(20);
-    rightEye.setTextColor(leftEye.Color(255, 0, 0));
-
-    rightEye.fillScreen(0);
-    rightEye.fillRoundRect(0, 0, 8, 8, 4, leftEye.Color(32, 128, 0));
-    rightEye.fillRoundRect(3, 2, 2, 2, 0, leftEye.Color(0, 0, 0));
-    rightEye.fillTriangle(0,7,7,7,0,4,leftEye.Color(0, 0, 0));
-    rightEye.show();
-  }
-
 }
 
 

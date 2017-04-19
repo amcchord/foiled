@@ -106,7 +106,7 @@ int left = 0;
 int right = 0;
 
 int count = 10;
-
+bool safeMode = true;
 imu::Vector<3> euler ;
 IntervalTimer gyroSafety;
 
@@ -208,10 +208,12 @@ void loop() {
     modeString = "Full";
   }
 
-  if (safety > 200){
+  if (safety < 200){
     armString = "ARM";
+    safeMode = false;
   } else {
     armString = "Safe";
+    safeMode = true;
     //Stop all the motors.
     leftMotor->run(RELEASE);
     rightMotor->run(RELEASE);
@@ -241,13 +243,11 @@ void loop() {
   }
 
   else if (mode == 2){
-    //driveAsist(thrust, turn);
-    simpleDrive(thrust, turn);
+    driveAsist(thrust, turn);
   }
 
   else if (mode == 4){
-    //fullAuto(thrust, turn);
-    simpleDrive(thrust, turn);
+    fullAuto(thrust, turn);`  `
   }
 
 
@@ -291,7 +291,7 @@ void doBalance(){
 void updateDisplay(){
   display.clearDisplay();
   display.setCursor(0,0);
-  display.setRotation(2);
+  display.setRotation(0);
   display.setTextSize(1);
   display.print(armString);
   display.setCursor(64,0);
@@ -330,10 +330,10 @@ void fullAuto(double thrust, double turn){
   //Lets run away from areas where we might fall over!
   double tilt = euler.y();
   double thrustAdjust;
-  if (tilt < -20){
+  if  (tilt > 20){
     thrustAdjust = -100 + tilt * 2;
   }
-  else if (tilt > 20){
+  else if (tilt < -20)){
     thrustAdjust = 100 + tilt * 2;
   }
   thrust = thrust + thrustAdjust;
@@ -416,6 +416,12 @@ void simpleDrive(double thrust, double turn){
   right = 0;
   turn = turn;
 
+  //lets not do anything if we are in safeMode
+  if (safeMode){
+    return;
+  }
+
+
   //This is where the turning logic is.. That's it.
   left = thrust + turn;
   right = thrust - turn;
@@ -432,13 +438,13 @@ void simpleDrive(double thrust, double turn){
   //If the left motor needs to go forward.
     if (left > 0){
       leftMotor->setSpeed(left);
-      leftMotor->run(FORWARD);
+      leftMotor->run(BACKWARD);
 
 
 
     } else { //Left motor needs to spin backward
       leftMotor->setSpeed(left * -1);
-      leftMotor->run(BACKWARD);
+      leftMotor->run(FORWARD);
 
 
     }
@@ -454,13 +460,13 @@ void simpleDrive(double thrust, double turn){
 
     if (right > 0){
       rightMotor->setSpeed(right);
-      rightMotor->run(BACKWARD);
+      rightMotor->run(FORWARD);
 
 
 
     } else {
       rightMotor->setSpeed(right * -1);
-      rightMotor->run(FORWARD);
+      rightMotor->run(BACKWARD);
 
     }
 }
